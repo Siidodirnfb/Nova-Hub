@@ -1,4 +1,4 @@
-# Nova Hub - merge donors into one catalog and verify every raw script link.
+﻿# Nova Hub - merge donors into one catalog and verify every raw script link.
 # Sources: catalog/index_state.json (full rscripts pool) + catalog/scriptblox.json
 # Ranking prefers working, popular, verified, recently updated scripts.
 # Each raw URL is fetched once; dead/empty/HTML responses are dropped.
@@ -13,10 +13,12 @@ RSCRIPTS_STATE = CATALOG / "index_state.json"
 SCRIPTBLOX = CATALOG / "scriptblox.json"
 OUT = CATALOG / "catalog.json"
 REJECTS = CATALOG / "rejected_urls.json"
+PARTIAL = CATALOG / "merge_partial.json"   # resume point: checked urls + finished games
+CHECKPOINT_EVERY = 300
 
 OUT_PER_CATEGORY = 4
 CANDIDATES_PER_CATEGORY = 9   # how many we try before giving up on 4
-CONCURRENCY = 12
+CONCURRENCY = 64
 MIN_BODY = 40                 # bytes; anything shorter is an empty stub
 
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0"}
@@ -150,14 +152,37 @@ async def main():
         return
 
     t0 = time.time()
-    url_cache = {}
-    rejects = {}
     catalog = {}
+    rejects = {}
+    url_cache = {}
+    done = set()
+
+    if PARTIAL.exists():
+        try:
+            prev = json.loads(PARTIAL.read_text(encoding="utf-8"))
+            catalog = prev.get("catalog") or {}
+            rejects = prev.get("rejects") or {}
+            url_cache = {k: tuple(v) for k, v in (prev.get("cache") or {}).items()}
+            done = set(prev.get("done") or [])
+            print(f"[resume] {len(catalog)} games, {len(url_cache)} urls checked, {len(done)} games finished")
+        except Exception:
+            print("[resume] checkpoint unreadable, starting over")
+
     sem = asyncio.Semaphore(CONCURRENCY)
     total = len(pool)
+    pending = [(pid, items) for pid, items in pool.items() if pid not in done]
+    print(f"[plan] {len(pending)} games left out of {total}")
+
+    def checkpoint():
+        PARTIAL.write_text(json.dumps({
+            "catalog": catalog,
+            "rejects": {k: v[-40:] for k, v in rejects.items()},
+            "cache": {k: list(v) for k, v in url_cache.items()},
+            "done": sorted(done),
+        }, ensure_ascii=False), encoding="utf-8")
 
     async with aiohttp.ClientSession(headers=UA, timeout=aiohttp.ClientTimeout(total=20)) as session:
-        for i, (pid, items) in enumerate(pool.items(), 1):
+        async def process(pid, items):
             items = dedupe(items)
             nk = sorted([x for x in items if not x["key"]], key=score, reverse=True)
             kk = sorted([x for x in items if x["key"]], key=score, reverse=True)
@@ -174,10 +199,10 @@ async def main():
                         break
                 return good
 
-            nk_good = await pick(nk)
-            kk_good = await pick(kk)
+            nk_good, kk_good = await asyncio.gather(pick(nk), pick(kk))
+            done.add(pid)
             if not nk_good and not kk_good:
-                continue
+                return
             name = next((x["gameName"] for x in items if x.get("gameName") and not x["gameName"].startswith("place ")), None)
             name = name or items[0]["gameName"]
             catalog[pid] = {
@@ -188,9 +213,19 @@ async def main():
                 "totalNoKey": len(nk),
                 "totalKey": len(kk),
             }
-            if i % 200 == 0:
-                print(f"[{i}/{total}] games kept {len(catalog)} | urls checked {len(url_cache)} "
-                      f"| {time.time() - t0:.0f}s", flush=True)
+
+        BATCH = 24   # games processed at once; each keeps its own url-check queue
+        for start in range(0, len(pending), BATCH):
+            chunk = pending[start:start + BATCH]
+            await asyncio.gather(*[process(pid, items) for pid, items in chunk])
+            i = start + len(chunk)
+            print(f"[{i}/{len(pending)}] games kept {len(catalog)} | urls checked {len(url_cache)} "
+                  f"| {time.time() - t0:.0f}s", flush=True)
+            if i % CHECKPOINT_EVERY < BATCH:
+                checkpoint()
+                print(f"[checkpoint] saved at {i}", flush=True)
+
+    checkpoint()
 
     payload = {
         "generated": time.time(),
@@ -221,3 +256,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
