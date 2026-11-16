@@ -80,13 +80,28 @@ python split_catalog.py
 
 ## Publishing
 
+The catalog lives at `https://github.com/Siidodirnfb/Nova-Hub` and the hub reads it from
+`https://raw.githubusercontent.com/Siidodirnfb/Nova-Hub/main/catalog`.
+
+To refresh after rebuilding:
+
 ```
-git init
-git remote add origin https://github.com/<you>/nova-hub.git
-git add catalog/index.json catalog/games
-git commit -m "catalog"
-git push -u origin main
+python harvest_index.py
+python harvest_scriptblox.py
+python merge_sources.py
+python fill_gaps.py
+python recover_429.py
+python split_catalog.py
+python check_catalog.py 80
+
+git add -A
+git commit -m "catalog refresh"
+git push
 ```
 
-Then set `CATALOG_BASE` in `NovaHub.lua` to
-`https://raw.githubusercontent.com/<you>/nova-hub/main/catalog`.
+Players load the hub with:
+
+```lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/Siidodirnfb/Nova-Hub/main/NovaHub.lua"))()
+```
+

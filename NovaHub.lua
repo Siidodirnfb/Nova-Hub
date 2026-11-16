@@ -2,7 +2,7 @@
 -- Layout: catalog/index.json has one row per game, catalog/games/<placeId>.json
 -- holds that game's scripts. Hub pulls only what it needs and caches both.
 
-local CATALOG_BASE = "https://raw.githubusercontent.com/YOUR_USER/nova-hub/main/catalog"
+local CATALOG_BASE = "https://raw.githubusercontent.com/Siidodirnfb/Nova-Hub/main/catalog"
 local INDEX_TTL = 3600 -- seconds a cached index stays fresh
 
 local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua", true))()
