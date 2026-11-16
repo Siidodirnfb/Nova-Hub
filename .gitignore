@@ -1,0 +1,11 @@
+# local noise
+donors/
+*.log
+__pycache__/
+*.pyc
+
+# large intermediate state (rebuildable)
+catalog/index_state.json
+catalog/scriptblox_state.json
+catalog/games.json
+catalog/rejected_urls.json
