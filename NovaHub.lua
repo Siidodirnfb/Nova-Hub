@@ -169,11 +169,12 @@ local InfoTab = Window:CreateTab({
 })
 
 if currentRow then
+	local entry = loadGame(placeId) or { name = currentRow.name, noKey = {}, key = {} }
 	InfoTab:CreateParagraph({
 		Title = currentRow.name or ("place " .. placeId),
-		Text = "Loading scripts for this game..."
+		Text = string.format("You are in this game. placeId %s, %d without a key, %d with a key.",
+			placeId, #(entry.noKey or {}), #(entry.key or {}))
 	})
-	local entry = loadGame(placeId) or { name = currentRow.name, noKey = {}, key = {} }
 	InfoTab:CreateLabel({ Text = "No key", Style = 1 })
 	addScripts(InfoTab, entry.noKey, "No keyless scripts for this game yet.")
 	InfoTab:CreateLabel({ Text = "With key", Style = 1 })
