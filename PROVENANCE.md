@@ -5,8 +5,11 @@ when, from which commit, and the exact bytes of each file.
 
 - build id: `vesper-2026-11-16`
 - generated: 2026-11-16 17:10 UTC
-- commit: `fd80a08` on `master`
-- repository: https://github.com/Siidodirnfb/nova-hub.git
+- build commit: `d0af099` on `master`
+- repository: https://github.com/Siidodirnfb/Vesper-Hub.git
+
+The build commit is the one that carries the files hashed below. This file is
+committed immediately after it, so it can never contain its own hash.
 
 ## Catalog
 
