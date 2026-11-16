@@ -16,7 +16,11 @@ loadstring(game:HttpGet("https://raw.githubusercontent.com/Siidodirnfb/Vesper-Hu
 | catalog size | 451 KB index, 0.3-1.8 KB per game |
 | sources | rscripts.net, scriptblox.com |
 
-The hub downloads the index once and caches it for an hour, then pulls only the file for the game in front of you. Nothing else is fetched until you press a script.
+The hub opens the window first and loads the catalog behind it, so nothing waits on the network at launch. The index is cached for six hours, a game's file is kept until the build id changes, and the host that answered last time is remembered and tried first.
+
+## Where it loads from
+
+Three addresses serve the same repository bytes, tried in order until one answers: `raw.githubusercontent.com`, then `cdn.jsdelivr.net/gh`, then `raw.githack.com`. They are CDN mirrors, not proxies: no request is rewritten and no third party sees the catalog between you and GitHub. The one that answered is written to `Vesper/host`, so the next launch starts there instead of probing again.
 
 ## The scripts are checked
 

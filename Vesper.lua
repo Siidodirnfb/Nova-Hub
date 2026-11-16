@@ -1,21 +1,103 @@
 -- Vesper (Luna Interface Suite)
 -- Reads catalog/index.json for the game list and catalog/games/<placeId>.json
--- for that game's scripts. Both are cached locally for an hour.
+-- for that game's scripts. Both are cached locally for six hours.
+--
+-- Startup does not wait for the network: the window opens, then the catalog is
+-- fetched in the background and the tabs fill in when it arrives. Hosts are
+-- tried in order, the fastest one is remembered, so a second launch goes
+-- straight to the host that answered last time.
 --
 -- The hub only performs HTTP GET requests, to the catalog host and to the
 -- script links that live inside the catalog. It never posts data anywhere and
 -- writes nothing outside its own cache folder.
 
-local CATALOG_BASE = "https://raw.githubusercontent.com/Siidodirnfb/Vesper-Hub/main/catalog"
-local SOURCE_URL = "https://github.com/Siidodirnfb/Vesper-Hub"
 local BUILD = "vesper-2026-11-16"
-local INDEX_TTL = 3600
+local SOURCE_URL = "https://github.com/Siidodirnfb/Vesper-Hub"
 
-local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua", true))()
+-- mirrors, direct first. jsDelivr and githack are plain CDNs for the same
+-- repository, not proxies: nothing is rewritten, the bytes are identical.
+local HOSTS = {
+	"https://raw.githubusercontent.com/Siidodirnfb/Vesper-Hub/main/",
+	"https://cdn.jsdelivr.net/gh/Siidodirnfb/Vesper-Hub@main/",
+	"https://raw.githack.com/Siidodirnfb/Vesper-Hub/main/",
+}
+local INDEX_TTL = 21600
+local CACHE = "Vesper"
+
+local LUNA_URL = "https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua"
+
+getgenv().Vesper = { build = BUILD, source = SOURCE_URL }
+
+local function readText(path)
+	if not (isfile and isfile(path)) then
+		return nil
+	end
+	local ok, raw = pcall(readfile, path)
+	if ok and type(raw) == "string" and raw ~= "" then
+		return raw
+	end
+	return nil
+end
+
+local function writeText(path, raw)
+	if not (writefile and type(raw) == "string") then
+		return
+	end
+	local folder = path:match("^(.-)/[^/]+$")
+	if folder and makefolder then
+		pcall(makefolder, folder)
+	end
+	pcall(writefile, path, raw)
+end
+
+-- pick up the host that answered last time, if any
+local hostIndex = tonumber(readText(CACHE .. "/host") or "") or 1
+if not HOSTS[hostIndex] then
+	hostIndex = 1
+end
+
+local function httpGet(path)
+	local order = { hostIndex }
+	for i = 1, #HOSTS do
+		if i ~= hostIndex then
+			order[#order + 1] = i
+		end
+	end
+	local err
+	for _, i in ipairs(order) do
+		local ok, body = pcall(game.HttpGet, game, HOSTS[i] .. path)
+		if ok and type(body) == "string" and #body > 0 then
+			if i ~= hostIndex then
+				hostIndex = i
+				writeText(CACHE .. "/host", tostring(i))
+			end
+			return body
+		end
+		err = body
+	end
+	return nil, err
+end
+
+local Luna
+do
+	local ok, body = pcall(game.HttpGet, game, LUNA_URL)
+	if not ok or type(body) ~= "string" or #body == 0 then
+		error("Vesper: could not download Luna Interface Suite")
+	end
+	Luna = loadstring(body)()
+end
+
 local HttpService = game:GetService("HttpService")
 
--- provenance marker: a copy without this string did not come from us
-getgenv().Vesper = { build = BUILD, source = SOURCE_URL }
+local function decode(raw)
+	if not raw then
+		return nil
+	end
+	local ok, data = pcall(function()
+		return HttpService:JSONDecode(raw)
+	end)
+	return ok and data or nil
+end
 
 local function notify(title, content)
 	Luna:Notification({ Title = title, Icon = "info", ImageSource = "Material", Content = content })
@@ -27,93 +109,61 @@ local function fmt(n)
 	return (out:gsub("^,", ""))
 end
 
-local function ensureFolder(path)
-	if makefolder then
-		pcall(makefolder, path)
-	end
-end
-
-local function readJSON(path)
-	if not (isfile and isfile(path)) then
-		return nil
-	end
-	local ok, raw = pcall(readfile, path)
-	if not ok or not raw then
-		return nil
-	end
-	local ok2, data = pcall(function()
-		return HttpService:JSONDecode(raw)
-	end)
-	return ok2 and data or nil
-end
-
-local function writeJSON(path, raw)
-	if not (writefile and isfile) then
-		return
-	end
-	local folder = path:match("^(.-)/[^/]+$")
-	if folder then
-		ensureFolder(folder)
-	end
-	pcall(writefile, path, raw)
-end
-
-local function fetchJSON(url)
-	local ok, raw = pcall(game.HttpGet, game, url, true)
-	if not ok or not raw or raw == "" then
-		return nil
-	end
-	local ok2, data = pcall(function()
-		return HttpService:JSONDecode(raw)
-	end)
-	if not ok2 then
-		return nil
-	end
-	return data, raw
-end
+local index
+local indexReady = false
 
 local function loadIndex()
-	local cached = readJSON("Vesper/index.json")
-	if cached and cached.generated and (os.time() - cached.generated) < INDEX_TTL and cached.games then
+	local cached = decode(readText(CACHE .. "/index.json"))
+	if cached and cached.games and (os.time() - (cached.generated or 0)) < INDEX_TTL then
 		return cached
 	end
-	local data, raw = fetchJSON(CATALOG_BASE .. "/index.json")
+	local raw = httpGet("catalog/index.json")
+	local data = decode(raw)
 	if data and data.games then
-		writeJSON("Vesper/index.json", raw)
+		writeText(CACHE .. "/index.json", raw)
 		return data
 	end
 	return cached
 end
-
-local index = loadIndex()
-local placeId = tostring(game.PlaceId)
 
 local function loadGame(id)
-	local cached = readJSON("Vesper/games/" .. id .. ".json")
-	if cached and (cached.noKey or cached.key) then
+	local path = CACHE .. "/games/" .. id .. ".json"
+	local cached = decode(readText(path))
+	if cached and (cached.noKey or cached.key) and cached.build == BUILD then
 		return cached
 	end
-	local data, raw = fetchJSON(CATALOG_BASE .. "/games/" .. id .. ".json")
+	local raw = httpGet("catalog/games/" .. id .. ".json")
+	local data = decode(raw)
 	if data then
-		writeJSON("Vesper/games/" .. id .. ".json", raw)
+		if not data.build then
+			data.build = BUILD
+		end
+		writeText(path, raw)
 		return data
 	end
 	return cached
 end
 
-local catalogCount = index and index.count or 0
+local function runAsync(fn)
+	if task and task.spawn then
+		task.spawn(fn)
+	else
+		coroutine.wrap(fn)()
+	end
+end
+
+local placeId = tostring(game.PlaceId)
 
 local Window = Luna:CreateWindow({
 	Name = "Vesper",
-	Subtitle = catalogCount ..
-		" games, links checked against source",
+	Subtitle = "keyless and key-locked scripts, links checked at build time",
 	LogoID = nil,
 	LoadingEnabled = true,
 	LoadingTitle = "Vesper",
-	LoadingSubtitle = "reading the catalog",
+	LoadingSubtitle = "starting",
 	ConfigSettings = {
 		RootFolder = nil,
-		ConfigFolder = "Vesper"
+		ConfigFolder = CACHE
 	},
 	KeySystem = false
 })
@@ -153,13 +203,7 @@ local function addScripts(tab, list, emptyText)
 	end
 end
 
-local function openGameTab(entry, id, isCurrent)
-	local tab = Window:CreateTab({
-		Name = (entry.name or ("place " .. id)):sub(1, 20),
-		Icon = "sports_esports",
-		ImageSource = "Material",
-		ShowTitle = true
-	})
+local function fillGameTab(tab, entry, id, isCurrent)
 	tab:CreateParagraph({
 		Title = entry.name or ("place " .. id),
 		Text = string.format("%splaceId %s. %d keyless, %d key-locked.",
@@ -170,11 +214,8 @@ local function openGameTab(entry, id, isCurrent)
 	addScripts(tab, entry.noKey, "No keyless scripts for this game.")
 	tab:CreateLabel({ Text = "Key-locked", Style = 1 })
 	addScripts(tab, entry.key, "No key-locked scripts for this game.")
-	return tab
 end
 
--- the game the player is in ----------------------------------------------
-local currentRow = index and index.games and index.games[placeId] or nil
 local InfoTab = Window:CreateTab({
 	Name = "Game",
 	Icon = "my_location",
@@ -182,25 +223,6 @@ local InfoTab = Window:CreateTab({
 	ShowTitle = true
 })
 
-if currentRow then
-	local entry = loadGame(placeId) or { name = currentRow.name, noKey = {}, key = {} }
-	InfoTab:CreateParagraph({
-		Title = currentRow.name or ("place " .. placeId),
-		Text = string.format("placeId %s. %d keyless, %d key-locked.",
-			placeId, #(entry.noKey or {}), #(entry.key or {}))
-	})
-	InfoTab:CreateLabel({ Text = "Keyless", Style = 1 })
-	addScripts(InfoTab, entry.noKey, "No keyless scripts for this game.")
-	InfoTab:CreateLabel({ Text = "Key-locked", Style = 1 })
-	addScripts(InfoTab, entry.key, "No key-locked scripts for this game.")
-else
-	InfoTab:CreateParagraph({
-		Title = "Not indexed",
-		Text = string.format("placeId %s has no entry. %d games are indexed in the Catalog tab.", placeId, catalogCount)
-	})
-end
-
--- catalog browser ---------------------------------------------------------
 local SearchTab = Window:CreateTab({
 	Name = "Catalog",
 	Icon = "search",
@@ -208,49 +230,39 @@ local SearchTab = Window:CreateTab({
 	ShowTitle = true
 })
 
-SearchTab:CreateParagraph({
-	Title = string.format("%d games indexed", catalogCount),
-	Text = "Search a game name, then open its scripts from the result."
-})
-
-local function normalize(s)
-	return (s or ""):lower():gsub("[^%w%s]", " "):gsub("%s+", " ")
-end
-
-local function searchCatalog(query)
-	local q = normalize(query):gsub("^%s+", ""):gsub("%s+$", "")
-	if #q < 2 or not (index and index.games) then
-		return {}
-	end
-	local scored = {}
-	for id, row in pairs(index.games) do
-		local name = normalize(row.name)
-		local first = name:find(q, 1, true)
-		if first then
-			scored[#scored + 1] = { id = id, row = row, score = first * 1000 + #name }
-		end
-	end
-	table.sort(scored, function(a, b)
-		return a.score < b.score
-	end)
-	return scored
-end
-
 SearchTab:CreateInput({
 	Name = "Search",
 	PlaceholderText = "blox fruits",
 	MaxCharacters = 40,
 	Enter = true,
 	Callback = function(text)
-		local matches = searchCatalog(text)
-		if #matches == 0 then
+		if not indexReady then
+			notify("Catalog still loading", "Try the same search again in a moment.")
+			return
+		end
+		local q = (text or ""):lower():gsub("[^%w%s]", " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+		if #q < 2 or not index.games then
+			return
+		end
+		local scored = {}
+		for id, row in pairs(index.games) do
+			local name = (row.name or ""):lower():gsub("[^%w%s]", " "):gsub("%s+", " ")
+			local first = name:find(q, 1, true)
+			if first then
+				scored[#scored + 1] = { id = id, row = row, score = first * 1000 + #name }
+			end
+		end
+		table.sort(scored, function(a, b)
+			return a.score < b.score
+		end)
+		SearchTab:CreateDivider()
+		if #scored == 0 then
 			SearchTab:CreateLabel({ Text = "No game matches \"" .. text .. "\"", Style = 3 })
 			return
 		end
-		SearchTab:CreateDivider()
-		SearchTab:CreateLabel({ Text = #matches .. " games match \"" .. text .. "\"", Style = 2 })
-		for i = 1, math.min(#matches, 6) do
-			local m = matches[i]
+		SearchTab:CreateLabel({ Text = #scored .. " games match \"" .. text .. "\"", Style = 2 })
+		for i = 1, math.min(#scored, 6) do
+			local m = scored[i]
 			SearchTab:CreateButton({
 				Name = m.row.name,
 				Description = string.format("placeId %s, %d keyless, %d key-locked", m.id, m.row.nk or 0, m.row.k or 0),
@@ -260,7 +272,13 @@ SearchTab:CreateInput({
 						notify("Not downloaded", "No script file for " .. (m.row.name or m.id))
 						return
 					end
-					openGameTab(entry, m.id, m.id == placeId)
+					local tab = Window:CreateTab({
+						Name = (entry.name or ("place " .. m.id)):sub(1, 20),
+						Icon = "sports_esports",
+						ImageSource = "Material",
+						ShowTitle = true
+					})
+					fillGameTab(tab, entry, m.id, m.id == placeId)
 				end
 			})
 		end
@@ -269,3 +287,33 @@ SearchTab:CreateInput({
 
 SearchTab:CreateDivider()
 SearchTab:CreateLabel({ Text = "build " .. BUILD .. ", source at " .. SOURCE_URL, Style = 2 })
+
+-- background: the window is already on screen, this only fills the tabs
+runAsync(function()
+	local ok, err = pcall(function()
+		index = loadIndex()
+		indexReady = index ~= nil and index.games ~= nil
+		if not indexReady then
+			InfoTab:CreateParagraph({
+				Title = "Catalog unavailable",
+				Text = "The index did not download. Check the connection and run the hub again."
+			})
+			return
+		end
+		local row = index.games[placeId]
+		if row then
+			local entry = loadGame(placeId) or { name = row.name, noKey = {}, key = {} }
+			fillGameTab(InfoTab, entry, placeId, true)
+		else
+			InfoTab:CreateParagraph({
+				Title = "Not indexed",
+				Text = string.format("placeId %s has no entry. %d games are in the Catalog tab.", placeId, index.count or 0)
+			})
+		end
+		SearchTab:CreateDivider()
+		SearchTab:CreateLabel({ Text = fmt(index.count or 0) .. " games indexed", Style = 2 })
+	end)
+	if not ok then
+		notify("Catalog unavailable", tostring(err):sub(1, 180))
+	end
+end)

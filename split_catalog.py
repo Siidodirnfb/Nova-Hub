@@ -1,6 +1,6 @@
-# Nova Hub - split catalog.json into a compact index + one file per game.
-# index.json  : {"generated":..,"count":..,"games":{"<placeId>":{"name":..,"nk":4,"k":4}}}
-# games/<placeId>.json : {"placeId":..,"name":..,"noKey":[..],"key":[..]}
+# Vesper - split catalog.json into a compact index + one file per game.
+# index.json  : {"generated":..,"build":..,"count":..,"games":{"<placeId>":{"name":..,"nk":4,"k":4}}}
+# games/<placeId>.json : {"placeId":..,"build":..,"name":..,"noKey":[..],"key":[..]}
 import json, shutil, time
 from pathlib import Path
 
@@ -39,6 +39,7 @@ def main():
     for pid, entry in games.items():
         rec = {
             "placeId": pid,
+            "build": BUILD_ID,
             "name": entry.get("name") or f"place {pid}",
             "noKey": trim(entry.get("noKey") or []),
             "key": trim(entry.get("key") or []),

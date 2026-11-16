@@ -12,8 +12,15 @@ of hosts it reads from:
 | host | what |
 | --- | --- |
 | `raw.githubusercontent.com/Siidodirnfb/Vesper-Hub` | the catalog (`index.json`, `games/<placeId>.json`) |
+| `cdn.jsdelivr.net/gh/Siidodirnfb/Vesper-Hub` | the same catalog, used only if the address above does not answer |
+| `raw.githack.com/Siidodirnfb/Vesper-Hub` | the same catalog, third fallback |
 | `raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite` | the Luna UI library |
 | the `rawScript` URLs stored in the catalog | the third-party scripts themselves |
+
+The two extra hosts are CDN mirrors of this same repository, nothing else. They
+serve identical bytes, and `python check_published.py` compares what a host
+returns with the hashes in `PROVENANCE.md`, so a mirror that ever served
+something different would be visible.
 
 It never sends data anywhere. There is no `HttpPost`, no `request`, no
 `Synapse`/`setclipboard` call, no webhook, no token, no HWID, no cookie
@@ -23,8 +30,9 @@ harvesting. Grep for it:
 grep -nE "HttpPost|request\(|setclipboard|webhook|HttpService:Post" Vesper.lua
 ```
 
-The only writes are cached catalog files inside the executor's own folder
-(`Vesper/index.json`, `Vesper/games/*.json`). They can be deleted at any time.
+The only writes are cached catalog files and one host marker inside the
+executor's own folder (`Vesper/index.json`, `Vesper/games/*.json`,
+`Vesper/host`). They can be deleted at any time.
 
 ## Why it is not a stealer
 
