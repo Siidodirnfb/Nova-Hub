@@ -82,6 +82,7 @@ Ranking is `views + likes * 12 + executes * 2 + verified bonus + recency bonus`.
 | `split_catalog.py` | catalog -> index + per-game files |
 | `check_catalog.py` | re-check a sample of shipped links |
 | `verify.py` | recompute published hashes |
+| `check_published.py` | download the published files and compare them with `PROVENANCE.md` |
 | `provenance.py` | regenerate PROVENANCE.md |
 | `find_donors.py` | GitHub donor scanner (mostly SEO spam, kept for reference) |
 | `harvest_rscripts_games.py`, `harvest_games2.py`, `build_catalog2.py` | earlier approaches, superseded |
