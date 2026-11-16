@@ -12,6 +12,11 @@ INDEX = CATALOG / "index.json"
 
 FIELDS = ("title", "key", "views", "likes", "slug", "rawScript")
 
+# provenance: this string ships inside index.json and inside Vesper.lua.
+# A copy that drops it did not come from the original build, and a copy that
+# keeps it can be traced back to the commit it was built from.
+BUILD_ID = "vesper-2026-11-16"
+
 
 def trim(items):
     out = []
@@ -29,7 +34,7 @@ def main():
         shutil.rmtree(GAMES_DIR)
     GAMES_DIR.mkdir(parents=True, exist_ok=True)
 
-    index = {"generated": int(time.time()), "count": 0, "games": {}}
+    index = {"generated": int(time.time()), "build": BUILD_ID, "count": 0, "games": {}}
     written = 0
     for pid, entry in games.items():
         rec = {

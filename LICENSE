@@ -1,0 +1,35 @@
+Vesper Hub License, version 1
+https://github.com/Siidodirnfb/Vesper-Hub
+
+This license covers the Vesper Hub loader (Vesper.lua), the catalog format, the
+build scripts in this repository and the catalog data we generated ourselves.
+
+Third-party scripts reachable through the catalog are not ours and are not
+covered here. They belong to their authors and keep their own terms.
+
+You may:
+  - read, run and study every file in this repository;
+  - use the hub in your own Roblox sessions, for free, with no account;
+  - copy it for personal use;
+  - modify it, and publish your modifications.
+
+If you publish a copy or a modification, you must:
+  - keep this license file and the build identifier (the `BUILD` string in
+    Vesper.lua and the `build` field in catalog/index.json) intact;
+  - credit the original with a working link to the repository above;
+  - state clearly what you changed;
+  - license your version under this same license.
+
+You may not:
+  - sell the hub, put it behind a paid key, an ad gate or a shortened link;
+  - rebrand it and present the catalog work as your own;
+  - remove the credit and the build identifier to hide where it came from;
+  - redistribute it as a closed or obfuscated build.
+
+Attribution is the whole condition. Nobody is stopped from reading this code,
+forking it or arguing with it. The only thing this license protects is the fact
+that this catalog was built here, by this repository, from these sources, and
+that a copy is a copy.
+
+THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTY OF ANY KIND. USE IT AT YOUR
+OWN RISK.
